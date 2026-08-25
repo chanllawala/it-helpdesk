@@ -24,7 +24,7 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
       - key: CORS_ORIGINS
-        value: https://it-helpdesk-frontend.onrender.com
+        value: https://it-helpdesk-frontend-3lpf.onrender.com
       - key: PYTHON_VERSION
         value: 3.13.7
 
@@ -36,7 +36,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
-        value: https://it-helpdesk-backend.onrender.com
+        value: https://it-helpdesk-backend-5s1n.onrender.com
     routes:
       - type: rewrite
         source: /*
