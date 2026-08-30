@@ -1,0 +1,202 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# Required for the OIDC token exchange; without id-token: write there are no
+# AWS credentials at all.
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  # A second push should not deploy on top of a deploy already in flight.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+
+      - name: Backend tests
+        working-directory: backend
+        run: pytest -v
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck and build frontend
+        working-directory: frontend
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+
+  container:
+    name: Build container
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build
+        working-directory: backend
+        run: docker build -t helpdesk-backend:${{ github.sha }} .
+
+      # Catches an image that builds but cannot actually boot — a broken
+      # dependency or entrypoint fails here rather than in production.
+      - name: Verify the image serves traffic
+        run: |
+          docker run -d --name smoke -p 8000:8000 \
+            -e DATABASE_URL=sqlite:///./helpdesk.db \
+            -e JWT_SECRET_KEY=ci-only \
+            helpdesk-backend:${{ github.sha }}
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:8000/health; then
+              echo "container healthy"; docker rm -f smoke; exit 0
+            fi
+            sleep 2
+          done
+          echo "container failed to become healthy"; docker logs smoke; exit 1
+
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: [test, container]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    # Skipped until the AWS_ROLE_ARN repository variable exists, so the
+    # workflow stays green before any infrastructure is provisioned.
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check AWS is configured
+        id: guard
+        run: |
+          if [ -z "${{ vars.AWS_ROLE_ARN }}" ]; then
+            echo "AWS_ROLE_ARN not set — skipping deploy."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        if: steps.guard.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        if: steps.guard.outputs.configured == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: backend
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          # Tagged with the commit SHA so every deploy is traceable to a commit
+          # and a rollback is just redeploying an earlier tag.
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$REGISTRY/$REPOSITORY:$TAG" -t "$REGISTRY/$REPOSITORY:latest" .
+          docker push "$REGISTRY/$REPOSITORY:$TAG"
+          docker push "$REGISTRY/$REPOSITORY:latest"
+
+      - name: Render new task definition
+        if: steps.guard.outputs.configured == 'true'
+        id: taskdef
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          TAG: ${{ github.sha }}
+        run: |
+          # Take the live definition, swap only the image, and strip the
+          # server-managed fields that RegisterTaskDefinition rejects.
+          aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_TASK_FAMILY }}" \
+            --query taskDefinition > taskdef.json
+
+          jq --arg IMAGE "$REGISTRY/$REPOSITORY:$TAG" '
+            .containerDefinitions[0].image = $IMAGE
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)
+          ' taskdef.json > new-taskdef.json
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-taskdef.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to ECS
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_SERVICE }}" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" \
+            > /dev/null
+
+          # Fails the job if the new task never reaches a steady state, rather
+          # than reporting success on a deploy that silently rolled back.
+          aws ecs wait services-stable \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}"
+
+      - uses: actions/setup-node@v5
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: frontend
+        env:
+          # Same origin as the site itself; CloudFront routes /api to ECS.
+          VITE_API_URL: /api
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish frontend
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: frontend
+        run: |
+          # Hashed assets are immutable and cached hard; index.html must not be,
+          # or browsers keep loading the previous build's asset references.
+          aws s3 sync dist/ "s3://${{ vars.FRONTEND_BUCKET }}/" \
+            --delete --cache-control "public,max-age=31536000,immutable" \
+            --exclude index.html
+          aws s3 cp dist/index.html "s3://${{ vars.FRONTEND_BUCKET }}/index.html" \
+            --cache-control "no-cache"
+
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DIST_ID }}" \
+            --paths "/index.html" > /dev/null

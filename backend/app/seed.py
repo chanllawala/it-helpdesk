@@ -1,6 +1,8 @@
 """Populate the database with demo users and tickets. Run with: python -m app.seed"""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from .timeutil import utcnow
 
 from .database import Base, SessionLocal, engine
 from .models import Comment, Ticket, TicketPriority, TicketStatus, User, UserRole
@@ -48,7 +50,7 @@ def run():
             status=TicketStatus.IN_PROGRESS,
             created_by_id=user.id,
             assigned_to_id=agent.id,
-            created_at=datetime.utcnow() - timedelta(days=2),
+            created_at=utcnow() - timedelta(days=2),
         )
         t2 = Ticket(
             title="New laptop request",
@@ -57,7 +59,7 @@ def run():
             priority=TicketPriority.LOW,
             status=TicketStatus.OPEN,
             created_by_id=user.id,
-            created_at=datetime.utcnow() - timedelta(days=1),
+            created_at=utcnow() - timedelta(days=1),
         )
         t3 = Ticket(
             title="Password reset for shared drive",
@@ -67,8 +69,8 @@ def run():
             status=TicketStatus.RESOLVED,
             created_by_id=user.id,
             assigned_to_id=agent.id,
-            created_at=datetime.utcnow() - timedelta(days=3),
-            resolved_at=datetime.utcnow() - timedelta(days=2, hours=20),
+            created_at=utcnow() - timedelta(days=3),
+            resolved_at=utcnow() - timedelta(days=2, hours=20),
         )
         db.add_all([t1, t2, t3])
         db.commit()

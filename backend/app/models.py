@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from .timeutil import utcnow
 
 from sqlalchemy import (
     Column,
@@ -43,7 +43,7 @@ class User(Base):
     full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(SAEnum(UserRole), nullable=False, default=UserRole.USER)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     created_tickets = relationship(
         "Ticket", back_populates="creator", foreign_keys="Ticket.created_by_id"
@@ -67,8 +67,8 @@ class Ticket(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     resolved_at = Column(DateTime, nullable=True)
     closed_at = Column(DateTime, nullable=True)
 
@@ -85,7 +85,7 @@ class Comment(Base):
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False)
     author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     body = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     ticket = relationship("Ticket", back_populates="comments")
     author = relationship("User", back_populates="comments")
@@ -100,6 +100,6 @@ class Notification(Base):
     ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False)
     recipient_email = Column(String, nullable=False)
     message = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     ticket = relationship("Ticket", back_populates="notifications")

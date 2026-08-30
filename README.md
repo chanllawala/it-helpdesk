@@ -31,6 +31,11 @@ can do:
 - **Frontend:** React + TypeScript + Vite, React Router
 - **Deploy:** Render, provisioned from [`render.yaml`](render.yaml) as
   infrastructure-as-code (web service + static site + managed Postgres)
+- **Also deployable to AWS:** S3 + CloudFront for the frontend, ECS on EC2 for
+  the API, RDS PostgreSQL for data, all defined in Terraform under
+  [`infra/`](infra/) and deployed by GitHub Actions using keyless OIDC auth.
+  See [`infra/README.md`](infra/README.md) for the architecture and the
+  mixed-content problem that shaped it.
 
 ## What this demonstrates
 

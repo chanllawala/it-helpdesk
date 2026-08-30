@@ -18,12 +18,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(tickets.router)
-app.include_router(dashboard.router)
-app.include_router(users.router)
+# Behind CloudFront the API is served from the same domain as the frontend
+# under /api, which removes the cross-origin request (and the mixed-content
+# block that an HTTPS page calling an HTTP origin would otherwise hit). The
+# prefix is configurable so the Render deployment, where the API has its own
+# hostname, keeps working with no prefix at all.
+for router in (auth.router, tickets.router, dashboard.router, users.router):
+    app.include_router(router, prefix=settings.api_prefix)
 
 
 @app.get("/health")
 def health():
+    """Deliberately unprefixed: container health checks hit this directly."""
     return {"status": "ok"}

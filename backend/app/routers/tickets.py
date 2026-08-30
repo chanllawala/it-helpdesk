@@ -1,4 +1,6 @@
 from datetime import datetime, date
+
+from ..timeutil import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -153,9 +155,9 @@ def update_status(
     ticket.status = payload.status
 
     if payload.status == models.TicketStatus.RESOLVED and ticket.resolved_at is None:
-        ticket.resolved_at = datetime.utcnow()
+        ticket.resolved_at = utcnow()
     if payload.status == models.TicketStatus.CLOSED and ticket.closed_at is None:
-        ticket.closed_at = datetime.utcnow()
+        ticket.closed_at = utcnow()
     if payload.status in (models.TicketStatus.OPEN, models.TicketStatus.IN_PROGRESS):
         ticket.resolved_at = None
         ticket.closed_at = None
