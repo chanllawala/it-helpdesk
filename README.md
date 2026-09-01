@@ -1,28 +1,52 @@
-# IT Helpdesk / Ticket Management System
+# IT Helpdesk
 
-A full-stack support ticketing system: user/agent/admin roles, ticket CRUD with
-priority and category, assignment, a status workflow (Open → In Progress →
-Resolved → Closed), a comment thread per ticket, a dashboard with ticket
-counts and average resolution time, simulated update notifications (logged to
-the `notifications` table and stdout), and search/filtering by status,
-priority, assignee, date range, and free text.
+**A support ticketing system with server-enforced role-based access** — the
+kind of tool a service desk actually runs on, built to understand how one
+works from the inside.
 
-## Live demo
+[![CI](https://github.com/chanllawala/it-helpdesk/actions/workflows/deploy.yml/badge.svg)](https://github.com/chanllawala/it-helpdesk/actions/workflows/deploy.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white)
 
-**App:** https://it-helpdesk-frontend-3lpf.onrender.com
-**API docs (interactive):** https://it-helpdesk-backend-5s1n.onrender.com/docs
+![Ticket queue with filtering by status, priority, assignee and date](docs/tickets.png)
 
-Sign in with any of the seeded accounts to see how the role changes what you
-can do:
+### ▶ [Try it live](https://it-helpdesk-frontend-3lpf.onrender.com) · [Interactive API docs](https://it-helpdesk-backend-5s1n.onrender.com/docs)
 
-| Email | Password | Role | What they can do |
+Sign in as any of these — **the role changes what you can see and do**, which
+is the point worth clicking through:
+
+| Email | Password | Role | What they get |
 | --- | --- | --- | --- |
-| `admin@helpdesk.example` | `admin123` | admin | Everything |
-| `agent@helpdesk.example` | `agent123` | agent | See all tickets, assign, change status |
+| `agent@helpdesk.example` | `agent123` | agent | Every ticket, plus assign and status controls |
 | `user@helpdesk.example` | `user123` | user | Only their own tickets; no management panel |
+| `admin@helpdesk.example` | `admin123` | admin | Everything |
 
-> Hosted on Render's free tier, which sleeps after ~15 minutes idle — the first
-> request can take 30–60 seconds to wake the service.
+> Render's free tier sleeps after ~15 minutes idle — the first request can take
+> 30–60 seconds to wake it.
+
+---
+
+## What it does
+
+A full ticket lifecycle: create with priority and category, assign to an
+agent, move through Open → In Progress → Resolved → Closed, and discuss it on
+a per-ticket comment thread. Plus a metrics dashboard, notification events on
+every change, and search and filtering by status, priority, assignee, date
+range and free text.
+
+**The ticket view** — description, metadata, the agent's management panel, and
+the comment thread that gives each case an audit history:
+
+![Ticket detail showing the comment thread and agent management panel](docs/ticket-detail.png)
+
+**The dashboard** — counts by status and priority, and an average resolution
+time computed from real timestamps:
+
+![Dashboard showing ticket counts by status and priority](docs/dashboard.png)
 
 ## Stack
 
@@ -47,6 +71,19 @@ can do:
   resolution time a real measurement rather than a decorative number.
 - **An auditable history** — every ticket carries its own comment thread, the
   way a real service desk keeps correspondence attached to the case.
+- **Tested where it matters** — 17 API tests weighted toward the access-control
+  rules. One user reading another's tickets is not a bug you want to find in
+  production.
+
+## Regenerating the screenshots
+
+The app is behind a login, so the images above are captured by a script that
+signs in first:
+
+```bash
+pip install playwright
+python docs/screenshots.py            # needs the app running locally
+```
 
 ## Backend
 
